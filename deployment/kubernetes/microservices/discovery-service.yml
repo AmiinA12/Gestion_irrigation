@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: discovery-service
+  namespace: irrigation-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: discovery-service
+  template:
+    metadata:
+      labels:
+        app: discovery-service
+    spec:
+      containers:
+      - name: discovery-service
+        image: discovery-service:latest # Note: User will need to build/push this image
+        ports:
+        - containerPort: 4040
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: discovery-service
+  namespace: irrigation-system
+spec:
+  selector:
+    app: discovery-service
+  ports:
+  - port: 4040
+    targetPort: 4040

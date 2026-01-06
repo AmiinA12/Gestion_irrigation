@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # INFRASTRUCTURE
+  # ==========================================
+  db-mysql:
+    image: mysql:8
+    container_name: db-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3307:3306"
+    networks:
+      - irrigation-net
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - irrigation-net
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "29092:29092"
+    networks:
+      - irrigation-net
+
+  # ==========================================
+  # SERVICES SYSTÈME (SPRING CLOUD)
+  # ==========================================
+  discovery-service:
+    build:
+      context: ../Backend/MsEureka
+      dockerfile: ../deployment/docker/MsEureka.Dockerfile
+    container_name: discovery-service
+    ports:
+      - "4040:4040"
+    networks:
+      - irrigation-net
+
+  config-service:
+    build:
+      context: ../Backend/ConfigServer
+      dockerfile: ../deployment/docker/ConfigServer.Dockerfile
+    container_name: config-service
+    ports:
+      - "9999:9999"
+    depends_on:
+      - discovery-service
+    networks:
+      - irrigation-net
+
+  # ==========================================
+  # MICROSERVICES MÉTIER
+  # ==========================================
+  capteurs-service:
+    build:
+      context: ../Backend/MicroserviceCapteurs
+      dockerfile: ../deployment/docker/MicroserviceCapteurs.Dockerfile
+    container_name: capteurs-service
+    depends_on:
+      - db-mysql
+      - kafka
+      - config-service
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-service:9999
+    networks:
+      - irrigation-net
+
+  irrigation-service:
+    build:
+      context: ../Backend/microservice_irrigation
+      dockerfile: ../deployment/docker/microservice_irrigation.Dockerfile
+    container_name: irrigation-service
+    depends_on:
+      - db-mysql
+      - kafka
+      - config-service
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-service:9999
+    networks:
+      - irrigation-net
+
+  # ==========================================
+  # FRONTEND & GATEWAY
+  # ==========================================
+  gateway-service:
+    build:
+      context: ../Backend/Gateway
+      dockerfile: ../deployment/docker/Gateway.Dockerfile
+    container_name: gateway-service
+    ports:
+      - "5000:5000"
+    depends_on:
+      - config-service
+    environment:
+      SPRING_CONFIG_IMPORT: optional:configserver:http://config-service:9999
+    networks:
+      - irrigation-net
+
+  frontend:
+    build:
+      context: ../frontend_irrigation
+      dockerfile: ../deployment/docker/Frontend.Dockerfile
+    container_name: frontend-irrigation
+    ports:
+      - "80:80"
+    depends_on:
+      - gateway-service
+    networks:
+      - irrigation-net
+
+networks:
+  irrigation-net:
+    driver: bridge
